@@ -2,76 +2,87 @@ import os
 import cv2
 import torch
 import numpy as np
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from ultralytics import YOLO
+from datetime import datetime
 
 app = Flask(__name__)
-CORS(app)  
-
-MODEL_PATH = r"C:\Users\Andrew\Documents\GitHub\FruitCountAI\runs\detect\train10\weights\best.pt"
-model = YOLO(MODEL_PATH)
+CORS(app)
 
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)  
 
-# Store average apple weight (in grams)
-AVERAGE_APPLE_WEIGHT = 150  # Default value
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MODEL_PATH = os.path.join(BASE_DIR, "..", "runs", "detect", "train10", "weights", "best.pt")
+model = YOLO(MODEL_PATH)
+
+AVERAGE_APPLE_WEIGHT = 150  
 
 def detect_fruits(image_path):
-    """
-    Runs YOLOv8 inference on an image and estimates apple count using depth perception.
-    Returns:
-    - Estimated apple count
-    - Processed image with bounding boxes
-    """
+    """Runs YOLO inference on an image and returns detected fruit count + processed image path."""
+    print(f"Checking if image exists: {image_path}")
+
+    if not os.path.exists(image_path):
+        print(f"ERROR: Image not found at {image_path}")
+        raise FileNotFoundError(f"Image not found: {image_path}")
+
     results = model(image_path)  
     detections = results[0].boxes  
+
     fruit_count = len(detections)  
-    
     image = cv2.imread(image_path)
-    apple_sizes = []  # Store apple sizes for depth estimation
-    
+
+    # Draw bounding boxes
     for box in detections.xyxy.cpu().numpy():
         x1, y1, x2, y2 = map(int, box[:4])
-        apple_sizes.append(abs(x2 - x1) * abs(y2 - y1))  # Area estimation
-        cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2) 
-    
-    if len(apple_sizes) > 1:
-        avg_size = np.mean(apple_sizes)
-        estimated_stack_count = round(sum(apple_sizes) / avg_size)
-    else:
-        estimated_stack_count = fruit_count  # If only one detected, no stack estimation
+        cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
-    output_path = os.path.join(UPLOAD_FOLDER, "detections.jpg")
+    # Save detection result with a unique name
+    output_filename = f"detection_{datetime.now().strftime('%Y%m%d%H%M%S')}.jpg"
+    output_path = os.path.join(UPLOAD_FOLDER, output_filename)
     cv2.imwrite(output_path, image)
-    
-    return estimated_stack_count, output_path
+
+    print(f"✅ YOLO detection complete. Fruits detected: {fruit_count}")
+    return fruit_count, output_filename 
 
 @app.route("/detect", methods=["POST"])
 def detect():
-    """
-    Endpoint to detect apples and estimate total count using depth.
-    """
+    print("eceived image upload request")
+
     if "file" not in request.files:
+        print("ERROR: No file uploaded")
         return jsonify({"error": "No file uploaded"}), 400
 
     file = request.files["file"]
-    file_path = os.path.join(UPLOAD_FOLDER, file.filename)
+
+    if file.filename == "":
+        print("ERROR: No selected file")
+        return jsonify({"error": "No selected file"}), 400
+
+    # Generate a unique filename for each uploaded image
+    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+    filename = f"uploaded_{timestamp}.jpg"
+    file_path = os.path.join(UPLOAD_FOLDER, filename)
+    
+    print(f"Saving file as: {file_path}")
     file.save(file_path)
 
-    estimated_apples, output_path = detect_fruits(file_path)
-    
-    return jsonify({
-        "estimated_apples": estimated_apples,
-        "detection_image": f"/uploads/detections.jpg"
-    })
+    try:
+        estimated_apples, detection_filename = detect_fruits(file_path)
+        return jsonify({
+            "estimated_apples": estimated_apples, 
+            "detection_image": f"/uploads/{detection_filename}"
+        })
+    except FileNotFoundError as e:
+        return jsonify({"error": str(e)}), 500
+    except Exception as e:
+        print(f"ERROR during detection: {str(e)}")
+        return jsonify({"error": "Detection failed", "details": str(e)}), 500
 
 @app.route("/average-weight", methods=["GET", "POST"])
 def average_weight():
-    """
-    Endpoint to get or update the average apple weight.
-    """
+    """Endpoint to get or update the average apple weight."""
     global AVERAGE_APPLE_WEIGHT
     if request.method == "POST":
         data = request.json
@@ -81,10 +92,9 @@ def average_weight():
 
 @app.route("/uploads/<filename>")
 def uploaded_file(filename):
-    """
-    Endpoint to serve uploaded detection images.
-    """
-    return send_file(os.path.join(UPLOAD_FOLDER, filename), mimetype="image/jpeg")
+    """Endpoint to serve uploaded detection images."""
+    print(f" Serving file: {filename}")
+    return send_from_directory(UPLOAD_FOLDER, filename, mimetype="image/jpeg")
 
 if __name__ == "__main__":
     print("🚀 Flask running at http://127.0.0.1:5000/")
