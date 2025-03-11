@@ -1,0 +1,13 @@
+train: C:/Users/Andrew/Documents/GitHub/FruitCountAI/dataset/train/images
+val: C:/Users/Andrew/Documents/GitHub/FruitCountAI/dataset/valid/images
+test: C:/Users/Andrew/Documents/GitHub/FruitCountAI/dataset/test/images
+
+nc: 1
+names: ['Apple']
+
+roboflow:
+  workspace: andrews-workspace-q2cfv
+  project: fruitcountai
+  version: 1
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/andrews-workspace-q2cfv/fruitcountai/dataset/1
