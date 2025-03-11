@@ -39,7 +39,6 @@ cd FruitCountAI
 
 Install dependencies:
 
-cd backend
 python -m venv venv  # Create virtual environment
 source venv/bin/activate  # On macOS/Linux
 venv\Scripts\activate  # On Windows
@@ -47,6 +46,7 @@ pip install -r requirements.txt
 
 Run the Flask server:
 
+cd api
 python app.py
 
 Flask API should now be running at http://127.0.0.1:5000/
